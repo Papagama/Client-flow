@@ -1,6 +1,7 @@
-import { useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { tasksDb } from '../services/storageDb'
+import { supabase } from '../services/supabase'
 
 interface Props {
   onNavigate?: () => void
@@ -8,10 +9,13 @@ interface Props {
 
 export default function Sidebar({ onNavigate }: Props) {
   const navigate = useNavigate()
+  const [overdueTasks, setOverdueTasks] = useState(0)
 
-  const overdueTasks = useMemo(() => {
+  useEffect(() => {
     const today = new Date().toISOString().slice(0, 10)
-    return tasksDb.getAll().filter(t => t.status !== 'done' && t.dueDate < today).length
+    tasksDb.getAll().then(tasks => {
+      setOverdueTasks(tasks.filter(t => t.status !== 'done' && t.dueDate < today).length)
+    })
   }, [])
 
   const links = [
@@ -22,8 +26,8 @@ export default function Sidebar({ onNavigate }: Props) {
     { to: '/app/settings', label: 'Настройки', icon: '⚙️', badge: 0 },
   ]
 
-  function handleLogout() {
-    localStorage.removeItem('token')
+  async function handleLogout() {
+    await supabase.auth.signOut()
     navigate('/login')
   }
 

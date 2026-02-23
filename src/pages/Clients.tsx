@@ -39,11 +39,12 @@ export default function Clients() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Client | null>(null)
 
-  const refresh = useCallback(() => setClients(clientsDb.getAll()), [])
+  const refresh = useCallback(() => {
+    clientsDb.getAll().then(setClients)
+  }, [])
 
   useEffect(() => {
-    setClients(clientsDb.getAll())
-    setLoading(false)
+    clientsDb.getAll().then(data => { setClients(data); setLoading(false) })
   }, [])
 
   const filtered = useMemo(() => {
@@ -55,23 +56,16 @@ export default function Clients() {
     })
   }, [clients, search, statusFilter])
 
-  function openCreate() {
-    setEditing(null)
-    setModalOpen(true)
-  }
+  function openCreate() { setEditing(null); setModalOpen(true) }
+  function openEdit(c: Client) { setEditing(c); setModalOpen(true) }
 
-  function openEdit(c: Client) {
-    setEditing(c)
-    setModalOpen(true)
-  }
-
-  function handleSave(data: { name: string; contact: string; niche: string; status: ClientStatus }) {
+  async function handleSave(data: { name: string; contact: string; niche: string; status: ClientStatus }) {
     try {
       if (editing) {
-        clientsDb.update(editing.id, data)
+        await clientsDb.update(editing.id, data)
         toast('Клиент обновлён')
       } else {
-        clientsDb.create(data)
+        await clientsDb.create(data)
         toast('Клиент создан')
       }
       refresh()
@@ -81,18 +75,11 @@ export default function Clients() {
     }
   }
 
-  function handleDelete(id: string) {
+  async function handleDelete(id: string) {
     try {
-      const backup = clientsDb.getById(id)
-      clientsDb.delete(id)
+      await clientsDb.delete(id)
       refresh()
-      toast('Клиент удалён', 'success', backup ? {
-        label: 'Отменить',
-        onClick: () => {
-          clientsDb.create({ name: backup.name, contact: backup.contact, niche: backup.niche, status: backup.status })
-          refresh()
-        },
-      } : undefined)
+      toast('Клиент удалён')
     } catch {
       toast('Не удалось удалить', 'error')
     }
@@ -101,17 +88,10 @@ export default function Clients() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <input
-          placeholder="Поиск по имени, контакту, нише…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="flex-1 min-w-[200px] px-3 py-2 rounded-lg border border-gray-300 text-sm outline-none focus:ring-2 focus:ring-indigo-400"
-        />
-        <select
-          value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value as ClientStatus | '')}
-          className="px-3 py-2 rounded-lg border border-gray-300 text-sm outline-none focus:ring-2 focus:ring-indigo-400"
-        >
+        <input placeholder="Поиск по имени, контакту, нише…" value={search} onChange={e => setSearch(e.target.value)}
+          className="flex-1 min-w-[200px] px-3 py-2 rounded-lg border border-gray-300 text-sm outline-none focus:ring-2 focus:ring-indigo-400" />
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as ClientStatus | '')}
+          className="px-3 py-2 rounded-lg border border-gray-300 text-sm outline-none focus:ring-2 focus:ring-indigo-400">
           {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
         <button onClick={openCreate} className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition">
@@ -144,9 +124,7 @@ export default function Clients() {
                   <td className="px-5 py-3 text-gray-600">{c.contact}</td>
                   <td className="px-5 py-3 text-gray-600">{c.niche}</td>
                   <td className="px-5 py-3">
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[c.status]}`}>
-                      {STATUS_LABELS[c.status]}
-                    </span>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[c.status]}`}>{STATUS_LABELS[c.status]}</span>
                   </td>
                   <td className="px-5 py-3 text-right space-x-2">
                     <button onClick={() => openEdit(c)} className="text-indigo-600 hover:text-indigo-800 text-xs font-medium">Изменить</button>
@@ -160,12 +138,7 @@ export default function Clients() {
       )}
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Редактировать клиента' : 'Новый клиент'}>
-        <ClientForm
-          key={editing?.id ?? 'new'}
-          client={editing}
-          onSave={handleSave}
-          onCancel={() => setModalOpen(false)}
-        />
+        <ClientForm key={editing?.id ?? 'new'} client={editing} onSave={handleSave} onCancel={() => setModalOpen(false)} />
       </Modal>
     </div>
   )

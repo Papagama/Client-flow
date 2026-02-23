@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import './services/storageDb'
+// storageDb is now async (Supabase)
 import App from './App.tsx'
 import { ToastProvider } from './shared/ui/Toast'
 

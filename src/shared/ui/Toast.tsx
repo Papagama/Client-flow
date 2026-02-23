@@ -74,7 +74,7 @@ const EXIT_MS = 300
 
 function Toast({ item, onDone }: { item: ToastItem; onDone: () => void }) {
   const [exiting, setExiting] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout>>()
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   useEffect(() => {
     timerRef.current = setTimeout(() => setExiting(true), item.action ? DURATION : 3000)

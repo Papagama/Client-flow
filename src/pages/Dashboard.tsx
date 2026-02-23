@@ -1,22 +1,36 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { projectsDb, clientsDb, tasksDb, paymentsDb } from '../services/storageDb'
+import type { Project, Task, Payment } from '../services/storageDb'
 import { SkeletonCards, SkeletonTable } from '../components/Skeleton'
 import TaskChart from '../components/TaskChart'
 
 export default function Dashboard() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
+  const [projects, setProjects] = useState<Project[]>([])
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [payments, setPayments] = useState<Payment[]>([])
+  const [clientMap, setClientMap] = useState<Map<string, string>>(new Map())
+
   const today = new Date().toISOString().slice(0, 10)
   const week = (() => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10) })()
 
-  const projects = useMemo(() => projectsDb.getAll(), [])
-  const tasks = useMemo(() => tasksDb.getAll(), [])
-  const payments = useMemo(() => paymentsDb.getAll(), [])
-  const clientMap = useMemo(() => {
-    const m = new Map<string, string>()
-    clientsDb.getAll().forEach(c => m.set(c.id, c.name))
-    return m
+  useEffect(() => {
+    Promise.all([
+      projectsDb.getAll(),
+      tasksDb.getAll(),
+      paymentsDb.getAll(),
+      clientsDb.getAll(),
+    ]).then(([p, t, pay, c]) => {
+      setProjects(p)
+      setTasks(t)
+      setPayments(pay)
+      const m = new Map<string, string>()
+      c.forEach(cl => m.set(cl.id, cl.name))
+      setClientMap(m)
+      setLoading(false)
+    })
   }, [])
 
   const activeProjects = projects.filter(p => p.status === 'active')
@@ -28,11 +42,9 @@ export default function Dashboard() {
 
   const unpaidTotal = unpaidPayments.reduce((s, p) => s + p.amount, 0)
 
-  useEffect(() => { setLoading(false) }, [])
-
   const cards = [
     { label: 'Проекты в работе', value: activeProjects.length, sub: `из ${projects.length} всего`, icon: '📁', color: 'bg-indigo-50 text-indigo-600' },
-    { label: 'Ожидают оплаты', value: `${unpaidTotal.toLocaleString()}`, sub: `${unpaidPayments.length} счёт(ов)`, icon: '💰', color: 'bg-amber-50 text-amber-600' },
+    { label: 'Ожидают оплаты', value: `${unpaidTotal.toLocaleString()} ₽`, sub: `${unpaidPayments.length} счёт(ов)`, icon: '💰', color: 'bg-amber-50 text-amber-600' },
     { label: 'Просроченные задачи', value: overdueTasks.length, sub: 'требуют внимания', icon: '⚠️', color: 'bg-red-50 text-red-600' },
     { label: 'Дедлайны за 7 дней', value: upcomingDeadlines.length, sub: 'проект(ов)', icon: '📅', color: 'bg-sky-50 text-sky-600' },
   ]

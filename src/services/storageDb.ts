@@ -1,3 +1,5 @@
+import { supabase } from './supabase'
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type ClientStatus = 'lead' | 'active' | 'paused' | 'done'
@@ -18,7 +20,7 @@ export interface Project {
   clientId: string
   title: string
   stage: ProjectStage
-  deadline: string          // ISO date string (YYYY-MM-DD)
+  deadline: string
   budget: number
   status: 'active' | 'completed' | 'on-hold'
   createdAt: string
@@ -64,278 +66,252 @@ export interface Comment {
   createdAt: string
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function uid(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
-}
-
-function now(): string {
-  return new Date().toISOString()
-}
-
-function daysFromNow(d: number): string {
-  const date = new Date()
-  date.setDate(date.getDate() + d)
-  return date.toISOString().slice(0, 10)
-}
-
-function load<T>(key: string): T[] {
-  try {
-    return JSON.parse(localStorage.getItem(key) ?? '[]') as T[]
-  } catch {
-    return []
-  }
-}
-
-function save<T>(key: string, data: T[]): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(data))
-  } catch (e) {
-    const msg = e instanceof DOMException && e.name === 'QuotaExceededError'
-      ? 'Хранилище заполнено. Удалите часть данных.'
-      : 'Не удалось сохранить данные.'
-    storageDb.onError?.(msg)
-    throw new Error(msg)
-  }
-}
-
 // ─── Error hook ──────────────────────────────────────────────────────────────
 
 export const storageDb = {
   onError: null as ((msg: string) => void) | null,
 }
 
-// ─── Keys ────────────────────────────────────────────────────────────────────
-
-const KEYS = {
-  clients: 'db_clients',
-  projects: 'db_projects',
-  tasks: 'db_tasks',
-  payments: 'db_payments',
-  links: 'db_links',
-  comments: 'db_comments',
-  seeded: 'db_seeded',
+function handleError(msg: string) {
+  storageDb.onError?.(msg)
 }
 
-// ─── Seed ────────────────────────────────────────────────────────────────────
+async function getUserId(): Promise<string> {
+  const { data } = await supabase.auth.getUser()
+  return data.user?.id ?? ''
+}
 
-function seed(): void {
-  if (localStorage.getItem(KEYS.seeded)) return
+// ─── Row mappers (snake_case → camelCase) ────────────────────────────────────
 
-  const clients: Client[] = [
-    { id: uid(), name: 'Alice Johnson', contact: 'alice@acme.com', niche: 'E-commerce', status: 'active', createdAt: now() },
-    { id: uid(), name: 'Bob Smith', contact: 'bob@globex.com', niche: 'FinTech', status: 'lead', createdAt: now() },
-    { id: uid(), name: 'Carol White', contact: 'carol@initech.com', niche: 'Healthcare', status: 'paused', createdAt: now() },
-  ]
-
-  const projects: Project[] = [
-    { id: uid(), clientId: clients[0].id, title: 'Website Redesign', stage: 'development', deadline: daysFromNow(5), budget: 12000, status: 'active', createdAt: now() },
-    { id: uid(), clientId: clients[0].id, title: 'Mobile App', stage: 'brief', deadline: daysFromNow(30), budget: 45000, status: 'on-hold', createdAt: now() },
-    { id: uid(), clientId: clients[1].id, title: 'CRM Integration', stage: 'revisions', deadline: daysFromNow(-3), budget: 8500, status: 'active', createdAt: now() },
-    { id: uid(), clientId: clients[2].id, title: 'Analytics Dashboard', stage: 'delivery', deadline: daysFromNow(-10), budget: 20000, status: 'completed', createdAt: now() },
-    { id: uid(), clientId: clients[1].id, title: 'Payment Gateway', stage: 'design', deadline: daysFromNow(2), budget: 15000, status: 'active', createdAt: now() },
-  ]
-
-  const tasks: Task[] = [
-    { id: uid(), projectId: projects[0].id, title: 'Design mockups', description: 'Create wireframes and high-fidelity mockups in Figma', status: 'done', dueDate: daysFromNow(-5), priority: 'high', createdAt: now() },
-    { id: uid(), projectId: projects[0].id, title: 'Frontend implementation', description: 'Build React components based on approved designs', status: 'doing', dueDate: daysFromNow(3), priority: 'high', createdAt: now() },
-    { id: uid(), projectId: projects[0].id, title: 'QA testing', description: 'Run full regression test suite', status: 'todo', dueDate: daysFromNow(7), priority: 'medium', createdAt: now() },
-    { id: uid(), projectId: projects[2].id, title: 'API mapping', description: 'Map CRM endpoints to internal data model', status: 'doing', dueDate: daysFromNow(1), priority: 'high', createdAt: now() },
-    { id: uid(), projectId: projects[2].id, title: 'Data migration', description: 'Migrate legacy data to new schema', status: 'todo', dueDate: daysFromNow(10), priority: 'low', createdAt: now() },
-    { id: uid(), projectId: projects[3].id, title: 'Chart components', description: 'Build reusable chart components with D3', status: 'done', dueDate: daysFromNow(-12), priority: 'medium', createdAt: now() },
-  ]
-
-  save(KEYS.clients, clients)
-  save(KEYS.projects, projects)
-  save(KEYS.tasks, tasks)
-
-  const payments: Payment[] = [
-    { id: uid(), projectId: projects[0].id, amount: 4000, description: 'Design phase', date: daysFromNow(-15), status: 'paid' },
-    { id: uid(), projectId: projects[0].id, amount: 5000, description: 'Development milestone 1', date: daysFromNow(-2), status: 'partial' },
-    { id: uid(), projectId: projects[0].id, amount: 3000, description: 'Final delivery', date: daysFromNow(10), status: 'unpaid' },
-    { id: uid(), projectId: projects[2].id, amount: 8500, description: 'Full payment', date: daysFromNow(-5), status: 'unpaid' },
-    { id: uid(), projectId: projects[4].id, amount: 7500, description: 'Upfront deposit', date: daysFromNow(-1), status: 'paid' },
-  ]
-
-  const links: Link[] = [
-    { id: uid(), projectId: projects[0].id, label: 'Figma mockups', url: 'https://figma.com/file/example' },
-    { id: uid(), projectId: projects[0].id, label: 'GitHub repo', url: 'https://github.com/example/website' },
-    { id: uid(), projectId: projects[2].id, label: 'API docs', url: 'https://docs.example.com/crm' },
-  ]
-
-  const comments: Comment[] = [
-    { id: uid(), taskId: tasks[0].id, text: 'Макеты утверждены клиентом', author: 'Админ', createdAt: now() },
-    { id: uid(), taskId: tasks[1].id, text: 'Начал работу над компонентами', author: 'Админ', createdAt: now() },
-    { id: uid(), taskId: tasks[3].id, text: 'Нужно уточнить формат данных', author: 'Админ', createdAt: now() },
-  ]
-
-  save(KEYS.payments, payments)
-  save(KEYS.links, links)
-  save(KEYS.comments, comments)
-  localStorage.setItem(KEYS.seeded, '1')
+function mapClient(r: Record<string, unknown>): Client {
+  return { id: r.id as string, name: r.name as string, contact: r.contact as string, niche: r.niche as string, status: r.status as ClientStatus, createdAt: r.created_at as string }
+}
+function mapProject(r: Record<string, unknown>): Project {
+  return { id: r.id as string, clientId: r.client_id as string, title: r.title as string, stage: r.stage as ProjectStage, deadline: r.deadline as string, budget: Number(r.budget), status: r.status as Project['status'], createdAt: r.created_at as string }
+}
+function mapTask(r: Record<string, unknown>): Task {
+  return { id: r.id as string, projectId: r.project_id as string, title: r.title as string, description: r.description as string, status: r.status as TaskStatus, dueDate: r.due_date as string, priority: r.priority as TaskPriority, createdAt: r.created_at as string }
+}
+function mapPayment(r: Record<string, unknown>): Payment {
+  return { id: r.id as string, projectId: r.project_id as string, amount: Number(r.amount), description: r.description as string, date: r.date as string, status: r.status as PaymentStatus }
+}
+function mapLink(r: Record<string, unknown>): Link {
+  return { id: r.id as string, projectId: r.project_id as string, label: r.label as string, url: r.url as string }
+}
+function mapComment(r: Record<string, unknown>): Comment {
+  return { id: r.id as string, taskId: r.task_id as string, text: r.text as string, author: r.author as string, createdAt: r.created_at as string }
 }
 
 // ─── Clients ─────────────────────────────────────────────────────────────────
 
 export const clientsDb = {
-  getAll(): Client[] {
-    return load<Client>(KEYS.clients)
+  async getAll(): Promise<Client[]> {
+    const { data, error } = await supabase.from('clients').select('*').order('created_at', { ascending: false })
+    if (error) { handleError('Не удалось загрузить клиентов'); return [] }
+    return (data ?? []).map(mapClient)
   },
-  getById(id: string): Client | undefined {
-    return this.getAll().find(c => c.id === id)
+  async getById(id: string): Promise<Client | undefined> {
+    const { data, error } = await supabase.from('clients').select('*').eq('id', id).single()
+    if (error) return undefined
+    return mapClient(data)
   },
-  create(data: Omit<Client, 'id' | 'createdAt'>): Client {
-    const item: Client = { ...data, id: uid(), createdAt: now() }
-    save(KEYS.clients, [...this.getAll(), item])
-    return item
+  async create(d: Omit<Client, 'id' | 'createdAt'>): Promise<Client> {
+    const uid = await getUserId()
+    const { data, error } = await supabase.from('clients').insert({ user_id: uid, name: d.name, contact: d.contact, niche: d.niche, status: d.status }).select().single()
+    if (error) { handleError('Не удалось создать клиента'); throw error }
+    return mapClient(data)
   },
-  update(id: string, data: Partial<Omit<Client, 'id' | 'createdAt'>>): Client {
-    const all = this.getAll()
-    const idx = all.findIndex(c => c.id === id)
-    if (idx === -1) throw new Error(`Client ${id} not found`)
-    all[idx] = { ...all[idx], ...data }
-    save(KEYS.clients, all)
-    return all[idx]
+  async update(id: string, d: Partial<Omit<Client, 'id' | 'createdAt'>>): Promise<Client> {
+    const upd: Record<string, unknown> = {}
+    if (d.name !== undefined) upd.name = d.name
+    if (d.contact !== undefined) upd.contact = d.contact
+    if (d.niche !== undefined) upd.niche = d.niche
+    if (d.status !== undefined) upd.status = d.status
+    const { data, error } = await supabase.from('clients').update(upd).eq('id', id).select().single()
+    if (error) { handleError('Не удалось обновить клиента'); throw error }
+    return mapClient(data)
   },
-  delete(id: string): void {
-    save(KEYS.clients, this.getAll().filter(c => c.id !== id))
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase.from('clients').delete().eq('id', id)
+    if (error) handleError('Не удалось удалить клиента')
   },
 }
 
 // ─── Projects ────────────────────────────────────────────────────────────────
 
 export const projectsDb = {
-  getAll(): Project[] {
-    return load<Project>(KEYS.projects)
+  async getAll(): Promise<Project[]> {
+    const { data, error } = await supabase.from('projects').select('*').order('created_at', { ascending: false })
+    if (error) { handleError('Не удалось загрузить проекты'); return [] }
+    return (data ?? []).map(mapProject)
   },
-  getById(id: string): Project | undefined {
-    return this.getAll().find(p => p.id === id)
+  async getById(id: string): Promise<Project | undefined> {
+    const { data, error } = await supabase.from('projects').select('*').eq('id', id).single()
+    if (error) return undefined
+    return mapProject(data)
   },
-  getByClient(clientId: string): Project[] {
-    return this.getAll().filter(p => p.clientId === clientId)
+  async getByClient(clientId: string): Promise<Project[]> {
+    const { data, error } = await supabase.from('projects').select('*').eq('client_id', clientId).order('created_at', { ascending: false })
+    if (error) return []
+    return (data ?? []).map(mapProject)
   },
-  create(data: Omit<Project, 'id' | 'createdAt'>): Project {
-    const item: Project = { ...data, id: uid(), createdAt: now() }
-    save(KEYS.projects, [...this.getAll(), item])
-    return item
+  async create(d: Omit<Project, 'id' | 'createdAt'>): Promise<Project> {
+    const uid = await getUserId()
+    const { data, error } = await supabase.from('projects').insert({ user_id: uid, client_id: d.clientId, title: d.title, stage: d.stage, deadline: d.deadline, budget: d.budget, status: d.status }).select().single()
+    if (error) { handleError('Не удалось создать проект'); throw error }
+    return mapProject(data)
   },
-  update(id: string, data: Partial<Omit<Project, 'id' | 'createdAt'>>): Project {
-    const all = this.getAll()
-    const idx = all.findIndex(p => p.id === id)
-    if (idx === -1) throw new Error(`Project ${id} not found`)
-    all[idx] = { ...all[idx], ...data }
-    save(KEYS.projects, all)
-    return all[idx]
+  async update(id: string, d: Partial<Omit<Project, 'id' | 'createdAt'>>): Promise<Project> {
+    const upd: Record<string, unknown> = {}
+    if (d.clientId !== undefined) upd.client_id = d.clientId
+    if (d.title !== undefined) upd.title = d.title
+    if (d.stage !== undefined) upd.stage = d.stage
+    if (d.deadline !== undefined) upd.deadline = d.deadline
+    if (d.budget !== undefined) upd.budget = d.budget
+    if (d.status !== undefined) upd.status = d.status
+    const { data, error } = await supabase.from('projects').update(upd).eq('id', id).select().single()
+    if (error) { handleError('Не удалось обновить проект'); throw error }
+    return mapProject(data)
   },
-  delete(id: string): void {
-    save(KEYS.projects, this.getAll().filter(p => p.id !== id))
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase.from('projects').delete().eq('id', id)
+    if (error) handleError('Не удалось удалить проект')
   },
 }
 
 // ─── Tasks ───────────────────────────────────────────────────────────────────
 
 export const tasksDb = {
-  getAll(): Task[] {
-    return load<Task>(KEYS.tasks)
+  async getAll(): Promise<Task[]> {
+    const { data, error } = await supabase.from('tasks').select('*').order('created_at', { ascending: false })
+    if (error) { handleError('Не удалось загрузить задачи'); return [] }
+    return (data ?? []).map(mapTask)
   },
-  getById(id: string): Task | undefined {
-    return this.getAll().find(t => t.id === id)
+  async getById(id: string): Promise<Task | undefined> {
+    const { data, error } = await supabase.from('tasks').select('*').eq('id', id).single()
+    if (error) return undefined
+    return mapTask(data)
   },
-  getByProject(projectId: string): Task[] {
-    return this.getAll().filter(t => t.projectId === projectId)
+  async getByProject(projectId: string): Promise<Task[]> {
+    const { data, error } = await supabase.from('tasks').select('*').eq('project_id', projectId).order('created_at', { ascending: false })
+    if (error) return []
+    return (data ?? []).map(mapTask)
   },
-  create(data: Omit<Task, 'id' | 'createdAt'>): Task {
-    const item: Task = { ...data, id: uid(), createdAt: now() }
-    save(KEYS.tasks, [...this.getAll(), item])
-    return item
+  async create(d: Omit<Task, 'id' | 'createdAt'>): Promise<Task> {
+    const uid = await getUserId()
+    const { data, error } = await supabase.from('tasks').insert({ user_id: uid, project_id: d.projectId, title: d.title, description: d.description, status: d.status, due_date: d.dueDate, priority: d.priority }).select().single()
+    if (error) { handleError('Не удалось создать задачу'); throw error }
+    return mapTask(data)
   },
-  update(id: string, data: Partial<Omit<Task, 'id' | 'createdAt'>>): Task {
-    const all = this.getAll()
-    const idx = all.findIndex(t => t.id === id)
-    if (idx === -1) throw new Error(`Task ${id} not found`)
-    all[idx] = { ...all[idx], ...data }
-    save(KEYS.tasks, all)
-    return all[idx]
+  async update(id: string, d: Partial<Omit<Task, 'id' | 'createdAt'>>): Promise<Task> {
+    const upd: Record<string, unknown> = {}
+    if (d.projectId !== undefined) upd.project_id = d.projectId
+    if (d.title !== undefined) upd.title = d.title
+    if (d.description !== undefined) upd.description = d.description
+    if (d.status !== undefined) upd.status = d.status
+    if (d.dueDate !== undefined) upd.due_date = d.dueDate
+    if (d.priority !== undefined) upd.priority = d.priority
+    const { data, error } = await supabase.from('tasks').update(upd).eq('id', id).select().single()
+    if (error) { handleError('Не удалось обновить задачу'); throw error }
+    return mapTask(data)
   },
-  delete(id: string): void {
-    save(KEYS.tasks, this.getAll().filter(t => t.id !== id))
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase.from('tasks').delete().eq('id', id)
+    if (error) handleError('Не удалось удалить задачу')
   },
 }
 
 // ─── Payments ────────────────────────────────────────────────────────────────
 
 export const paymentsDb = {
-  getAll(): Payment[] {
-    return load<Payment>(KEYS.payments)
+  async getAll(): Promise<Payment[]> {
+    const { data, error } = await supabase.from('payments').select('*')
+    if (error) { handleError('Не удалось загрузить оплаты'); return [] }
+    return (data ?? []).map(mapPayment)
   },
-  getByProject(projectId: string): Payment[] {
-    return this.getAll().filter(p => p.projectId === projectId)
+  async getByProject(projectId: string): Promise<Payment[]> {
+    const { data, error } = await supabase.from('payments').select('*').eq('project_id', projectId)
+    if (error) return []
+    return (data ?? []).map(mapPayment)
   },
-  create(data: Omit<Payment, 'id'>): Payment {
-    const item: Payment = { ...data, id: uid() }
-    save(KEYS.payments, [...this.getAll(), item])
-    return item
+  async create(d: Omit<Payment, 'id'>): Promise<Payment> {
+    const uid = await getUserId()
+    const { data, error } = await supabase.from('payments').insert({ user_id: uid, project_id: d.projectId, amount: d.amount, description: d.description, date: d.date, status: d.status }).select().single()
+    if (error) { handleError('Не удалось создать оплату'); throw error }
+    return mapPayment(data)
   },
-  update(id: string, data: Partial<Omit<Payment, 'id'>>): Payment {
-    const all = this.getAll()
-    const idx = all.findIndex(p => p.id === id)
-    if (idx === -1) throw new Error(`Payment ${id} not found`)
-    all[idx] = { ...all[idx], ...data }
-    save(KEYS.payments, all)
-    return all[idx]
+  async update(id: string, d: Partial<Omit<Payment, 'id'>>): Promise<Payment> {
+    const upd: Record<string, unknown> = {}
+    if (d.projectId !== undefined) upd.project_id = d.projectId
+    if (d.amount !== undefined) upd.amount = d.amount
+    if (d.description !== undefined) upd.description = d.description
+    if (d.date !== undefined) upd.date = d.date
+    if (d.status !== undefined) upd.status = d.status
+    const { data, error } = await supabase.from('payments').update(upd).eq('id', id).select().single()
+    if (error) { handleError('Не удалось обновить оплату'); throw error }
+    return mapPayment(data)
   },
-  delete(id: string): void {
-    save(KEYS.payments, this.getAll().filter(p => p.id !== id))
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase.from('payments').delete().eq('id', id)
+    if (error) handleError('Не удалось удалить оплату')
   },
 }
 
 // ─── Links ───────────────────────────────────────────────────────────────────
 
 export const linksDb = {
-  getAll(): Link[] {
-    return load<Link>(KEYS.links)
+  async getAll(): Promise<Link[]> {
+    const { data, error } = await supabase.from('links').select('*')
+    if (error) return []
+    return (data ?? []).map(mapLink)
   },
-  getByProject(projectId: string): Link[] {
-    return this.getAll().filter(l => l.projectId === projectId)
+  async getByProject(projectId: string): Promise<Link[]> {
+    const { data, error } = await supabase.from('links').select('*').eq('project_id', projectId)
+    if (error) return []
+    return (data ?? []).map(mapLink)
   },
-  create(data: Omit<Link, 'id'>): Link {
-    const item: Link = { ...data, id: uid() }
-    save(KEYS.links, [...this.getAll(), item])
-    return item
+  async create(d: Omit<Link, 'id'>): Promise<Link> {
+    const uid = await getUserId()
+    const { data, error } = await supabase.from('links').insert({ user_id: uid, project_id: d.projectId, label: d.label, url: d.url }).select().single()
+    if (error) { handleError('Не удалось создать ссылку'); throw error }
+    return mapLink(data)
   },
-  update(id: string, data: Partial<Omit<Link, 'id'>>): Link {
-    const all = this.getAll()
-    const idx = all.findIndex(l => l.id === id)
-    if (idx === -1) throw new Error(`Link ${id} not found`)
-    all[idx] = { ...all[idx], ...data }
-    save(KEYS.links, all)
-    return all[idx]
+  async update(id: string, d: Partial<Omit<Link, 'id'>>): Promise<Link> {
+    const upd: Record<string, unknown> = {}
+    if (d.projectId !== undefined) upd.project_id = d.projectId
+    if (d.label !== undefined) upd.label = d.label
+    if (d.url !== undefined) upd.url = d.url
+    const { data, error } = await supabase.from('links').update(upd).eq('id', id).select().single()
+    if (error) { handleError('Не удалось обновить ссылку'); throw error }
+    return mapLink(data)
   },
-  delete(id: string): void {
-    save(KEYS.links, this.getAll().filter(l => l.id !== id))
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase.from('links').delete().eq('id', id)
+    if (error) handleError('Не удалось удалить ссылку')
   },
 }
 
 // ─── Comments ────────────────────────────────────────────────────────────────
 
 export const commentsDb = {
-  getAll(): Comment[] {
-    return load<Comment>(KEYS.comments)
+  async getAll(): Promise<Comment[]> {
+    const { data, error } = await supabase.from('comments').select('*').order('created_at', { ascending: true })
+    if (error) return []
+    return (data ?? []).map(mapComment)
   },
-  getByTask(taskId: string): Comment[] {
-    return this.getAll().filter(c => c.taskId === taskId)
+  async getByTask(taskId: string): Promise<Comment[]> {
+    const { data, error } = await supabase.from('comments').select('*').eq('task_id', taskId).order('created_at', { ascending: true })
+    if (error) return []
+    return (data ?? []).map(mapComment)
   },
-  create(data: Omit<Comment, 'id' | 'createdAt'>): Comment {
-    const item: Comment = { ...data, id: uid(), createdAt: now() }
-    save(KEYS.comments, [...this.getAll(), item])
-    return item
+  async create(d: Omit<Comment, 'id' | 'createdAt'>): Promise<Comment> {
+    const uid = await getUserId()
+    const { data, error } = await supabase.from('comments').insert({ user_id: uid, task_id: d.taskId, text: d.text, author: d.author }).select().single()
+    if (error) { handleError('Не удалось создать комментарий'); throw error }
+    return mapComment(data)
   },
-  delete(id: string): void {
-    save(KEYS.comments, this.getAll().filter(c => c.id !== id))
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase.from('comments').delete().eq('id', id)
+    if (error) handleError('Не удалось удалить комментарий')
   },
 }
-
-// ─── Init ────────────────────────────────────────────────────────────────────
-
-seed()
